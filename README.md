@@ -64,12 +64,15 @@ After configuring PostgreSQL and running migrations:
 ╚════════════════════════════════════════════╝
 ```
 
-`verify.sh` is provided for Linux/macOS environments. Windows users can run the equivalent Django commands individually:
-```powershell
-python manage.py check
-python manage.py migrate --check
-python manage.py test
+**Linux / macOS:**
+```bash
+./verify.sh
 ```
+**Any platform (including Windows):**
+```bash
+python verify.py
+```
+Both scripts produce identical output. `verify.py` uses only Python and works everywhere.
 
 Start the development server:
 ```bash
