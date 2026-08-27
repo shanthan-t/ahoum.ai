@@ -1,15 +1,15 @@
 # Ahoum Events Platform
 
 A Django REST backend for an events platform featuring:
-- authentication
-- email verification
-- JWT authentication
-- Seeker / Facilitator roles
-- event discovery
-- event management
-- enrollment
-- cancellation / re-enrollment
-- PostgreSQL-backed concurrency protection
+- 🔐 **Authentication**
+- ✉️ **Email verification**
+- 🎟️ **JWT authentication**
+- 🎭 **Seeker / Facilitator roles**
+- 🔍 **Event discovery**
+- 📅 **Event management**
+- 📝 **Enrollment**
+- 🔄 **Cancellation / Re-enrollment**
+- 🐘 **PostgreSQL-backed concurrency protection**
 
 ## Quick Evaluation
 
