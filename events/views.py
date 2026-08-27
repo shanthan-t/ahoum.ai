@@ -37,7 +37,7 @@ class EventListCreateView(generics.ListCreateAPIView):
         return super().get_permissions()
 
     def get_queryset(self):
-        queryset = Event.objects.all().order_by("starts_at", "id")
+        queryset = Event.objects.select_related("created_by").all().order_by("starts_at", "id")
 
         q = self.request.query_params.get("q")
         location = self.request.query_params.get("location")
