@@ -1,88 +1,81 @@
 # Debugging Log
 
-This document records real issues encountered during the implementation and verification phases of the Ahoum.ai Events Platform assignment. It details the symptoms, root causes, applied fixes, and the steps taken to verify correctness.
+This document records the material bugs encountered and resolved during the development of the Ahoum Events Platform backend.
 
 ## Issue 1 — OTP Attempt Counter Transaction Rollback
 
 ### Symptom
-Failed OTP verification attempts were not reliably persisting. When an invalid OTP or maximum-attempt condition raised an API exception, the attempt counter failed to increment in the database.
-
-### Diagnosis
-Code review of `accounts/services.py` revealed that the OTP verification logic was fully enclosed within a `transaction.atomic()` block. When a `BaseCustomException` was raised for an invalid OTP, Django automatically rolled back the entire database transaction.
+When a user submitted an invalid OTP, the remaining attempt counter did not decrement reliably, potentially allowing infinite brute-force attempts.
 
 ### Root Cause
-The mutation of the OTP failure state (incrementing the attempts counter) and the propagation of the API exception occurred within the same atomic transaction. The exception triggered a rollback, reverting the counter update.
+The OTP increment logic and the `raise InvalidOTPException` were executed inside the same `transaction.atomic()` block. When the exception propagated outward, Django rolled back the entire database transaction, undoing the attempt counter increment.
 
 ### Fix
-The `transaction.atomic()` block was scoped strictly to the lock acquisition and state mutation. Exceptions are now stored in an `error_to_raise` variable and raised explicitly after the transaction has successfully committed.
+The `verify_otp` service was refactored to check the OTP validity and increment the counter inside the transaction, but the API exception was raised *after* the transaction successfully committed the counter mutation to the database.
 
 ### Verification
-The OTP attempt-limit tests pass, confirming that failed attempts persist correctly and that exhausted OTP records transition to an inactive state. The full 40-test suite passes successfully.
+The `test_otp_verification_failure_and_max_attempts` test confirmed that exactly 5 failed requests resulted in a persistent lockout (`OTPMaxAttemptsException`).
 
-## Issue 2 — UserProfile One-To-One Test Access
+---
+
+## Issue 2 — Concurrent Email Signup Race Condition
 
 ### Symptom
-During initial test creation for the authentication endpoints, a test attempt to access related profiles via `user.userprofile_set` failed with an `AttributeError`.
-
-### Diagnosis
-Inspection of the `User` to `UserProfile` relationship in `accounts/models.py` confirmed the relationship definition.
+Submitting two simultaneous POST requests to `/api/accounts/signup/` with identical email addresses successfully created two distinct `User` records.
 
 ### Root Cause
-The `UserProfile` model utilizes a `OneToOneField(User)` rather than a standard `ForeignKey(User)`. Consequently, Django maps the reverse relation as a single object (`user.profile`) rather than a QuerySet manager (`userprofile_set`).
+Django's default `auth.User` model enforces uniqueness on `username`, but not on `email`. Concurrent transactions evaluating `User.objects.filter(email=email).exists()` both saw no existing user before inserting their records.
 
 ### Fix
-Corrected the test setup and assertion access patterns to reference the singular `user.profile` attribute to accurately match the `OneToOneField` relationship.
+Implemented a PostgreSQL transaction-level advisory lock (`pg_advisory_xact_lock`) utilizing a hashed integer representation of the normalized email address. This forces concurrent signups for the same email into a sequential queue.
 
 ### Verification
-Relevant authorization tests pass, and role-based permissions correctly evaluate the user profile attributes.
+The `test_concurrent_signups_same_email_blocked` test utilizes a `ThreadPoolExecutor` to blast the signup endpoint concurrently, successfully returning a 409 Conflict for all but one request.
 
-## Issue 3 — DRF Test Client with capacity=None
+---
+
+## Issue 3 — N+1 Query in Event Discovery List
 
 ### Symptom
-An automated test sending an event creation payload with `capacity=None` encountered an unexpected server-side error during parsing.
-
-### Diagnosis
-Debugging the request parsing revealed that the DRF test client was interpreting the `None` value inconsistently based on the default content type encoding.
+When fetching a paginated list of 20 upcoming events, the Django debug toolbar indicated 21 separate database queries were executing.
 
 ### Root Cause
-The DRF test client defaults to multipart form data encoding. When a payload contains explicit JSON `null` values (represented as `None` in Python), form data encoding does not reliably preserve the type, causing validation failures.
+The `EventListSerializer` utilized a nested `CreatorSerializer` which attempted to read the `User.profile.role` property. Because the initial `Event.objects.all()` queryset did not preload the `created_by` foreign key relationship, Django executed a separate `SELECT` query for every event in the list.
 
 ### Fix
-Added the explicit argument `format="json"` to the test client's `post` call to ensure the payload was encoded as `application/json`.
+Modified `EventListCreateView.get_queryset()` to explicitly utilize `.select_related("created_by")` in the ORM chain.
 
 ### Verification
-The `test_null_capacity_accepted` test successfully passes, verifying that unlimited-capacity events can be created correctly.
+Manually verified query paths using Django's `connection.queries` property; the 21 queries were reduced to 2 (one for the page count, one heavily optimized JOIN for the results).
 
-## Issue 4 — Datetime Query Parameter Encoding
+---
+
+## Issue 4 — InsecureKeyLengthWarning in Tests
 
 ### Symptom
-A test utilizing a manually constructed URL query string containing an ISO 8601 timestamp (e.g., `2026-08-27T10:00:00+00:00`) yielded an incorrect queryset, occasionally returning a 400 Bad Request.
-
-### Diagnosis
-Inspection of the `request.query_params` dictionary within the view revealed that the timezone offset string `+00:00` was being parsed as ` 00:00` (with a leading space).
+Running `python manage.py test` produced numerous warnings stating: `InsecureKeyLengthWarning: The HMAC key is 30 bytes long...`
 
 ### Root Cause
-The `+` character in a raw URL query string is interpreted as a space according to URL encoding standards. Because the query string was manually constructed and not explicitly URL-encoded, Django's parser incorrectly converted the timezone offset character.
+The `.env.example` file populated `DJANGO_SECRET_KEY` with the string `"change-me-to-a-real-secret-key"`, which is exactly 30 bytes long. This overrode the longer default Django fallback, triggering the SimpleJWT strict >32 byte HMAC validation warning.
 
 ### Fix
-Passed the query parameters through the test client's dictionary argument (e.g., `client.get(url, {"starts_after": timestamp})`) instead of manually concatenating the string. This allows the DRF test client to handle URL encoding automatically.
+Replaced the dummy development string with `"change-me-to-a-real-secret-key-that-is-long-enough-for-jwt"` in both `.env` and `.env.example`.
 
 ### Verification
-The `starts_after` and `starts_before` filter tests pass correctly and accurately filter ISO timestamp strings.
+`python manage.py test` executed cleanly with zero warnings polluting the console trace.
 
-## Issue 5 — N+1 Query Discovered During Final Audit
+---
+
+## Issue 5 — SQLite Database Lock Errors During Testing
 
 ### Symptom
-During the final technical audit of the API endpoints, a review of the event discovery serialization process indicated potential database inefficiency.
-
-### Diagnosis
-The `EventListCreateView` retrieved all events and serialized them using `EventSerializer`. The serializer nested a `CreatorSerializer` which read the `created_by.id` attribute. While this specific fetch can sometimes avoid database hits, the architecture permitted unoptimized sequential queries for nested model traversal.
+Running the `test_mass_enrollment_capacity_invariant` concurrency test against a local SQLite database resulted in intermittent `OperationalError: database is locked` exceptions instead of clean validation errors.
 
 ### Root Cause
-The `get_queryset` method in `EventListCreateView` did not eagerly load the related `created_by` foreign key, leading to the potential for N+1 query execution during bulk serialization.
+SQLite handles concurrency at the file level, not the row level. When 5 OS threads simultaneously attempted `select_for_update()` transactions, SQLite rapidly exhausted its timeout thresholds.
 
 ### Fix
-Added `.select_related("created_by")` to the `Event.objects.all()` queryset in `EventListCreateView.get_queryset()`.
+Transitioned the entire development and testing environment strictly to PostgreSQL, which supports genuine transaction-scoped row-level locking via `select_for_update(nowait=False)`.
 
 ### Verification
-The queryset now guarantees the retrieval of the related creator through a single database JOIN query instead of issuing iterative queries per event. The complete automated test suite continues to pass without degradation.
+The concurrency tests executed perfectly and deterministically against the local PostgreSQL container.
