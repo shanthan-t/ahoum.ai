@@ -176,3 +176,11 @@ SIMPLE_JWT = {
 # --------------------------------------------------------------------------
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# --------------------------------------------------------------------------
+# OTP Settings
+# --------------------------------------------------------------------------
+
+OTP_TTL_MINUTES = 5
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_COOLDOWN_SECONDS = 60
