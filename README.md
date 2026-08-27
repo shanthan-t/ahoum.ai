@@ -34,19 +34,34 @@ After configuring PostgreSQL and running migrations:
 ```bash
 ./verify.sh
 ```
-This runs Django system checks, migration consistency verification, and the complete automated test suite. Expected output:
+`verify.sh` runs Django system checks, migration consistency verification, and the complete automated test suite — displaying each individual test result as it passes. Expected output:
 ```text
-========================================
- Ahoum Events Platform — Verification
-========================================
+╔════════════════════════════════════════════╗
+║       Ahoum Events Platform                ║
+║       Backend Verification                 ║
+╚════════════════════════════════════════════╝
 
-[1/3] Django system check ... PASS
-[2/3] Database migrations ... PASS
-[3/3] Automated tests ... 52 tests passed
+  [1/3] Django configuration
+        ✓ System check passed
 
-========================================
- VERIFICATION PASSED
-========================================
+  [2/3] Database state
+        ✓ Migrations are up to date
+
+  [3/3] Automated test suite
+        ✓ login flow
+        ✓ otp verification failure and max attempts
+        ✓ resend otp behavior
+        ✓ seeker can enroll
+        ✓ reenrollment behavior
+        ✓ mass enrollment capacity invariant
+        ... (52 tests listed individually)
+
+        ────────────────────────────────────
+        ✓ 52 tests passed
+
+╔════════════════════════════════════════════╗
+║         VERIFICATION PASSED               ║
+╚════════════════════════════════════════════╝
 ```
 
 `verify.sh` is provided for Linux/macOS environments. Windows users can run the equivalent Django commands individually:
