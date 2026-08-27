@@ -30,11 +30,17 @@ python manage.py migrate
 
 ### Verify the installation
 
-After configuring PostgreSQL and running migrations:
+**Linux / macOS:**
 ```bash
 ./verify.sh
 ```
-`verify.sh` runs Django system checks, migration consistency verification, and the complete automated test suite — displaying each individual test result as it passes. Expected output:
+**Any platform (including Windows):**
+```bash
+python verify.py
+```
+Both scripts produce identical output. `verify.py` uses only Python and works everywhere.
+
+`verify.sh` / `python verify.py` runs Django system checks, migration consistency verification, and the complete automated test suite — displaying each individual test result as it passes. Expected output:
 ```text
 ╔════════════════════════════════════════════╗
 ║       Ahoum Events Platform                ║
@@ -64,15 +70,6 @@ After configuring PostgreSQL and running migrations:
 ╚════════════════════════════════════════════╝
 ```
 
-**Linux / macOS:**
-```bash
-./verify.sh
-```
-**Any platform (including Windows):**
-```bash
-python verify.py
-```
-Both scripts produce identical output. `verify.py` uses only Python and works everywhere.
 
 Start the development server:
 ```bash
