@@ -23,12 +23,39 @@ cp .env.example .env
 ```
 *(Ensure PostgreSQL is configured and credentials match your `.env`.)*
 
-Run migrations, checks, and the automated test suite:
+Run migrations:
 ```bash
 python manage.py migrate
+```
+
+### Verify the installation
+
+After configuring PostgreSQL and running migrations:
+```bash
+./verify.sh
+```
+This runs Django system checks, migration consistency verification, and the complete automated test suite. Expected output:
+```text
+========================================
+ Ahoum Events Platform — Verification
+========================================
+
+[1/3] Django system check ... PASS
+[2/3] Database migrations ... PASS
+[3/3] Automated tests ... 52 tests passed
+
+========================================
+ VERIFICATION PASSED
+========================================
+```
+
+`verify.sh` is provided for Linux/macOS environments. Windows users can run the equivalent Django commands individually:
+```powershell
 python manage.py check
+python manage.py migrate --check
 python manage.py test
 ```
+
 Start the development server:
 ```bash
 python manage.py runserver
