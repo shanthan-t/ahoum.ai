@@ -1,15 +1,17 @@
 # Ahoum Events Platform
 
+![Django](https://img.shields.io/badge/Django-092E20?style=for-the-badge&logo=django&logoColor=white)
+![Django REST Framework](https://img.shields.io/badge/Django_REST-ff1709?style=for-the-badge&logo=django&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+
 A Django REST backend for an events platform featuring:
-- 🔐 **Authentication**
-- ✉️ **Email verification**
-- 🎟️ **JWT authentication**
-- 🎭 **Seeker / Facilitator roles**
-- 🔍 **Event discovery**
-- 📅 **Event management**
-- 📝 **Enrollment**
-- 🔄 **Cancellation / Re-enrollment**
-- 🐘 **PostgreSQL-backed concurrency protection**
+* **Authentication** — Email OTP verification combined with JWT-based sessions.
+* **Authorization** — Strict boundaries for Seeker and Facilitator roles.
+* **Event Management** — Facilitators can create and manage events with automated capacity handling.
+* **Discovery** — Seekers can search and filter upcoming events by text, location, and language.
+* **Enrollment Engine** — Complete enrollment, cancellation, and automated re-enrollment lifecycle.
+* **Concurrency** — PostgreSQL row-level locking guarantees safe capacity limits under heavy traffic.
 
 ## Quick Evaluation
 
