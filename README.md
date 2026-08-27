@@ -75,7 +75,7 @@ Start the development server:
 ```bash
 python manage.py runserver
 ```
-*(Note: Because this is a pure REST API backend, visiting the root `http://127.0.0.1:8000/` in a web browser will intentionally return a 404 Not Found. You can verify it is running by hitting a valid endpoint like `http://127.0.0.1:8000/api/events/`).*
+*(Note: Because this is a pure REST API backend, visiting the root `http://127.0.0.1:8000/` in a web browser will intentionally return a 404 Not Found. You can verify it is running by hitting a valid endpoint like `http://127.0.0.1:8000/api/accounts/signup/`).*
 
 ### Option 2 — Import Postman Collection
 The repository contains `Ahoum_API.postman_collection.json`. You can import this collection into Postman and use the preconfigured requests to evaluate the API without manually constructing request bodies.
