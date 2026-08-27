@@ -81,3 +81,11 @@ This document outlines key technical decisions made while building the Ahoum Eve
 * **Choice:** Overrode `drf_exceptions` to guarantee a consistent `{"detail": "...", "code": "..."}` shape.
 * **Trade-off:** Requires domain-specific exception classes (e.g., `EventCapacityFullException`).
 * **Verification:** All tests assert against the `code` key for deterministic validation.
+
+## 11. Evaluator Verification Script
+
+* **Problem:** Manually running Django checks, migrations, and parsing verbose test outputs is a poor evaluator experience.
+* **Options:** Create a bash script (`verify.sh`), build a fake web dashboard, or write a cross-platform Python script (`verify.py`).
+* **Choice:** Built a cross-platform `verify.py` script that hooks directly into Django's test runner, parsing and streaming real-time individual test results.
+* **Trade-off:** Requires maintaining an extra script in the repository root, but avoids over-engineered frontends while vastly improving evaluator UX across Linux, macOS, and Windows.
+* **Verification:** The script executes natively on all platforms without external dependencies, outputting a precise checklist of all 52 passing tests.

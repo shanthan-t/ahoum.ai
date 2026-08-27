@@ -72,6 +72,16 @@ This document records the AI-assisted development phases during the implementati
 * **Rejected:** Sequential/sleep-based testing. Real OS threads hitting PostgreSQL were mandated.
 * **Verified:** Concurrency tests passed under heavy parallel load.
 
+## Prompt 8 — Evaluator UX Polish
+
+**Goal:** Provide the evaluator with a frictionless way to review the project without building gimmicky dashboards or modifying application behavior.
+
+* **AI proposed:** Fake web dashboards or simple bash scripts.
+* **Accepted:** A detailed Postman collection with automatic token extraction and a one-command verification script.
+* **Changed:** Required the verification script to stream real individual test names as they pass, rather than hiding the actual test execution behind a fake progress bar. Required building `verify.py` instead of just `verify.sh` for true cross-platform Windows compatibility.
+* **Rejected:** Any changes to application code or the creation of an over-engineered frontend.
+* **Verified:** Executed `./verify.sh` and `python verify.py` on Linux/macOS and Windows, confirming identical output and zero dependencies.
+
 ---
 
 # What AI Got Wrong / What I Corrected

@@ -79,3 +79,19 @@ Transitioned the entire development and testing environment strictly to PostgreS
 
 ### Verification
 The concurrency tests executed perfectly and deterministically against the local PostgreSQL container.
+
+---
+
+## Issue 6 — Evaluator Root URL Confusion (404 Not Found)
+
+### Symptom
+Running `python manage.py runserver` and visiting `http://127.0.0.1:8000/` in a web browser returns a stark `404 Not Found` error.
+
+### Root Cause
+As this is a pure backend REST API, there is no root view (e.g., no `home.html`) mapped to the `/` URL path. All valid routes are namespaced under `/api/`.
+
+### Fix
+Added an explicit note in the README's server startup instructions clarifying that this is expected behavior and directing evaluators to valid endpoints like `/api/events/` or the provided Postman collection.
+
+### Verification
+Evaluators reading the README now expect the 404 and will proceed directly to API evaluation rather than assuming the application failed to start.
