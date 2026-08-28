@@ -28,7 +28,7 @@ cp .env.example .env
 
 This project strictly requires PostgreSQL to run the concurrency tests safely. It will not work with SQLite.
 
-1. Ensure your local PostgreSQL server is running.
+1. Ensure your local PostgreSQL server is running. (e.g., `sudo systemctl start postgresql` on Linux or `brew services start postgresql` on macOS).
 2. Create the empty database using your terminal:
    ```bash
    createdb ahoum -U postgres
