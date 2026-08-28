@@ -24,11 +24,16 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Ensure PostgreSQL is running, then create the database (assuming default `postgres` credentials):
-```bash
-createdb ahoum -U postgres
-```
-*(If your local PostgreSQL setup requires different credentials, update the `DB_` variables in your `.env` file).*
+### Database Setup (Mandatory)
+
+This project strictly requires PostgreSQL to run the concurrency tests safely. It will not work with SQLite.
+
+1. Ensure your local PostgreSQL server is running.
+2. Create the empty database using your terminal:
+   ```bash
+   createdb ahoum -U postgres
+   ```
+3. *Note: The `.env` file defaults to the username `postgres` and password `postgres`. If your local setup is different, please update the `DB_USER` and `DB_PASSWORD` inside your `.env` file.*
 
 Run migrations:
 ```bash
