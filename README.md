@@ -23,7 +23,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
-*(Ensure PostgreSQL is configured and credentials match your `.env`.)*
+
+Ensure PostgreSQL is running, then create the database (assuming default `postgres` credentials):
+```bash
+createdb ahoum -U postgres
+```
+*(If your local PostgreSQL setup requires different credentials, update the `DB_` variables in your `.env` file).*
 
 Run migrations:
 ```bash
