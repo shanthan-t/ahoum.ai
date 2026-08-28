@@ -1,91 +1,165 @@
-# Architecture and Design Decisions
+# Engineering Decisions
 
-This document outlines key technical decisions made while building the Ahoum Events Platform.
+This document records the non-trivial decisions that shaped the implementation of the Ahoum Events Platform, especially where the assignment left room for interpretation.
 
-## 1. Default Django User
+## Keeping Django's default User model
 
-* **Problem:** The assignment required using Django's default `auth.User`, which lacks fields for 'role' or 'email verified status'.
-* **Options:** Extend `AbstractUser`, monkey-patch `auth.User`, or use a `OneToOneField` profile.
-* **Choice:** Created a decoupled `UserProfile` model linked via `OneToOneField`.
-* **Trade-off:** Requires a `.select_related('profile')` join when querying users.
-* **Verification:** `accounts/tests.py` ensures roles cannot be bypassed.
+**The constraint**
+The assignment explicitly required using Django's default `auth.User`, which lacks fields for role (Seeker/Facilitator) or email verification status.
 
-## 2. Email Uniqueness / Advisory Lock
+**What I considered**
+I could have overridden `AbstractUser`, monkey-patched `auth.User`, or used a `OneToOneField` profile.
 
-* **Problem:** Default `auth.User` does not enforce global email uniqueness. Concurrent signups with the same email could result in duplicate accounts.
-* **Options:** Unique constraint on `UserProfile`, or PostgreSQL advisory locks.
-* **Choice:** Implemented PostgreSQL transaction-level advisory locks (`pg_advisory_xact_lock`) on a normalized email hash during signup.
-* **Trade-off:** Ties the signup concurrency guarantee to PostgreSQL.
-* **Verification:** Standard concurrent tests confirm only one account is created per email.
+**What I chose**
+I created a decoupled `UserProfile` model linked to `auth.User` via a `OneToOneField`. 
 
-## 3. OTP Storage/Lifecycle
+**The consequence**
+This strictly respects the assignment constraints. It does mean I have to use `.select_related('profile')` joins when querying users to avoid N+1 issues. Tests in `accounts/tests.py` guarantee that roles are always populated and cannot be bypassed.
 
-* **Problem:** Email OTPs must support 5-minute TTL, 5 attempts, and resend cooldowns.
-* **Options:** Store in Redis/Cache or directly in PostgreSQL.
-* **Choice:** Stored in PostgreSQL (`EmailOTP` model) linked to the user.
-* **Trade-off:** Database writes for every authentication attempt, but guarantees strict transactional consistency without introducing Redis as an external dependency.
-* **Verification:** Exhaustive edge-case testing in `accounts/tests.py`.
+## Enforcing email uniqueness safely
 
-## 4. OTP Transaction/Locking
+**The constraint**
+The default `auth.User` enforces uniqueness on `username`, but not on `email`. 
 
-* **Problem:** Brute-force OTP attempts could bypass the attempt counter if processed concurrently.
-* **Options:** Naive `update()` or row-level locking.
-* **Choice:** Used `select_for_update()` during verification to serialize access to the OTP row.
-* **Trade-off:** Negligible performance overhead for guaranteed security.
-* **Verification:** `test_otp_verification_failure_and_max_attempts` verifies strict 5-attempt limit.
+**What I considered**
+A simple `UNIQUE` constraint on the `UserProfile` email field, or using database locks.
 
-## 5. Enrollment Lifecycle
+**What I chose**
+I implemented a PostgreSQL transaction-level advisory lock (`pg_advisory_xact_lock`) utilizing a hashed integer representation of the normalized email address during signup. 
 
-* **Problem:** Re-enrollment after cancellation conflicts with simple `UNIQUE(event, seeker)` database constraints if records are kept for historical tracking.
-* **Options:** Soft-delete, delete-and-recreate, or state toggling.
-* **Choice:** State toggling. The row transitions from `enrolled` → `canceled` → `enrolled`, updating timestamps.
-* **Trade-off:** Simplified constraint (`UNIQUE`) but requires manual timestamp cleanup during reactivation.
-* **Verification:** `test_reenrollment_behavior` confirms correct lifecycle toggling.
+**The consequence**
+This forces concurrent signups for the identical email into a sequential queue, preventing duplicate accounts under high traffic. It ties the concurrency guarantee tightly to PostgreSQL, but standard concurrent tests confirm only one account is ever created per email.
 
-## 6. Event Row Locking (Concurrency)
+## Storing OTPs in PostgreSQL
 
-* **Problem:** The assignment required guaranteeing enrollment limits under heavy concurrency (5 users, 1 seat remaining).
-* **Options:** Optimistic concurrency control (version fields) or pessimistic row locking.
-* **Choice:** Pessimistic locking. All capacity operations acquire a `select_for_update()` lock on the parent `Event`.
-* **Trade-off:** Enrollment requests are strictly serialized, briefly blocking concurrent requests for the exact same event.
-* **Verification:** `test_mass_enrollment_capacity_invariant` uses real threads hitting the database simultaneously to verify exactly 1 succeeds.
+**The constraint**
+OTPs need a 5-minute TTL, a 5-attempt limit, and resend cooldowns.
 
-## 7. NULL Capacity
+**What I considered**
+Storing temporary OTP state in Redis/Cache or directly in PostgreSQL.
 
-* **Problem:** Events may have unlimited capacity.
-* **Options:** Use a magic number (e.g., `999999`) or `NULL`.
-* **Choice:** `NULL` represents unlimited capacity.
-* **Trade-off:** Requires conditional `capacity is None` logic in Python, but prevents arbitrary database limits.
-* **Verification:** `test_capacity_validation` verifies behavior.
+**What I chose**
+I opted to store hashed OTPs in PostgreSQL via an `EmailOTP` model linked to the user.
 
-## 8. Search Strategy
+**The consequence**
+This causes database writes for every authentication attempt. However, it guarantees strict transactional consistency and simplifies the deployment footprint by not introducing Redis as an external dependency. Edge cases are exhaustively tested in `accounts/tests.py`.
 
-* **Problem:** Events need to be searchable by title, description, and location.
-* **Options:** PostgreSQL `SearchVector`/Elasticsearch or Django ORM `icontains`.
-* **Choice:** Standard ORM `icontains`.
-* **Trade-off:** Cannot handle typos or complex stemming, but prevents over-engineering for a compact assignment.
-* **Verification:** Filter tests ensure exact date, text, and location matching.
+## OTP verification locking
 
-## 9. Event Capacity/Deletion Rules
+**The constraint**
+If an attacker brute-forces the OTP endpoint, concurrent requests could read the attempt counter, fail validation, and increment the counter simultaneously, effectively bypassing the 5-attempt limit.
 
-* **Problem:** Facilitators might attempt to reduce capacity below current enrollments or delete events with active seekers.
-* **Options:** Cascade delete/cancel or block the action.
-* **Choice:** Strictly block. Events cannot be deleted if enrollments exist, and capacity cannot be lowered below the active count.
-* **Trade-off:** Requires facilitators to manually cancel events rather than destroying data blindly.
-* **Verification:** Update/Delete endpoints tested for validation rejections.
+**What I considered**
+Using a naive `update()` or pessimistic row-level locking.
 
-## 10. Error Response Format
+**What I chose**
+I used `select_for_update()` during OTP verification to serialize access to the specific OTP row.
 
-* **Problem:** Consistent error formatting is critical for frontend integrations.
-* **Options:** Default DRF errors or custom exception handling.
-* **Choice:** Overrode `drf_exceptions` to guarantee a consistent `{"detail": "...", "code": "..."}` shape.
-* **Trade-off:** Requires domain-specific exception classes (e.g., `EventCapacityFullException`).
-* **Verification:** All tests assert against the `code` key for deterministic validation.
+**The consequence**
+There is a negligible performance overhead, but it guarantees absolute security for the attempt limit.
 
-## 11. Evaluator Verification Script
+## The enrollment state lifecycle
 
-* **Problem:** Manually running Django checks, migrations, and parsing verbose test outputs is a poor evaluator experience.
-* **Options:** Create a bash script (`verify.sh`), build a fake web dashboard, or write a cross-platform Python script (`verify.py`).
-* **Choice:** Built a cross-platform `verify.py` script that hooks directly into Django's test runner, parsing and streaming real-time individual test results.
-* **Trade-off:** Requires maintaining an extra script in the repository root, but avoids over-engineered frontends while vastly improving evaluator UX across Linux, macOS, and Windows.
-* **Verification:** The script executes natively on all platforms without external dependencies, outputting a precise checklist of all 52 passing tests.
+**The constraint**
+Seekers can enroll, cancel, and then re-enroll. If I keep canceled records for historical tracking, a simple `UNIQUE(event, seeker)` database constraint will block re-enrollment.
+
+**What I considered**
+Soft-deleting rows, deleting and recreating them, or toggling state.
+
+**What I chose**
+I implemented state toggling. The row transitions from `enrolled` → `canceled` → `enrolled`, and the timestamps (`enrolled_at`, `canceled_at`) are updated accordingly.
+
+**The consequence**
+This simplifies the database constraints (`UNIQUE` remains intact) but requires manual timestamp cleanup during reactivation. `test_reenrollment_behavior` confirms correct lifecycle toggling.
+
+## Concurrency and event capacity (The most critical decision)
+
+**The constraint**
+The assignment explicitly required guaranteeing enrollment limits under heavy concurrency. 
+
+Imagine an event has a `capacity` of 10, and 9 seats are taken. 5 users attempt to enroll at the exact same millisecond. 
+A naive implementation would execute:
+`count active enrollments` → `check capacity` → `insert enrollment`
+Because all 5 requests read a count of 9 simultaneously, they all bypass the capacity check, resulting in 14 total enrollments (a breach).
+
+**What I considered**
+Optimistic concurrency control using version fields, or pessimistic row-level locking.
+
+**What I chose**
+I chose pessimistic locking. During capacity-sensitive operations (enrollment, cancellation, or capacity reduction), the service acquires a `select_for_update()` lock on the parent `Event` row.
+
+The implemented sequence is:
+`lock Event` → `count active enrollments` → `check capacity` → `enroll` → `commit`
+
+**The consequence**
+Enrollment requests for the same event are strictly serialized. While this briefly blocks concurrent requests targeting the exact same event, it guarantees safe capacity enforcement without fail. `test_mass_enrollment_capacity_invariant` uses real threads hitting the database simultaneously to verify exactly 1 succeeds and 4 receive a 409 Conflict.
+
+## Representing unlimited capacity
+
+**The constraint**
+Events might not have an enrollment cap.
+
+**What I considered**
+Using a magic number (like `999999`) or `NULL`.
+
+**What I chose**
+I used `NULL` to represent unlimited capacity.
+
+**The consequence**
+This prevents arbitrary database limits but requires conditional `if capacity is not None` logic in Python. `test_capacity_validation` verifies this behaves correctly.
+
+## The search and filtering strategy
+
+**The constraint**
+Events must be searchable by title, description, and location.
+
+**What I considered**
+PostgreSQL `SearchVector` (or Elasticsearch) versus Django ORM `icontains`.
+
+**What I chose**
+I stuck with standard ORM `icontains` filters.
+
+**The consequence**
+It cannot handle typos or complex stemming, but it prevents over-engineering the search requirement for a compact assignment. Filter tests ensure exact date, text, and location matching.
+
+## Event deletion and capacity reduction bounds
+
+**The constraint**
+Facilitators shouldn't be able to destroy active enrollment data.
+
+**What I considered**
+Cascade deleting enrollments, auto-canceling them, or explicitly blocking the action.
+
+**What I chose**
+I chose to strictly block destructive actions. Events cannot be deleted if active enrollments exist, and capacity cannot be lowered below the current active enrollment count.
+
+**The consequence**
+Facilitators must manually cancel events or manage users rather than blindly destroying data. Update and Delete endpoints enforce these bounds.
+
+## Standardizing the error response format
+
+**The constraint**
+Consistent error formatting is critical for frontend integrations.
+
+**What I considered**
+Relying on default DRF errors or custom exception handling.
+
+**What I chose**
+I overrode `drf_exceptions` to guarantee a consistent `{"detail": "...", "code": "..."}` shape across the entire API.
+
+**The consequence**
+This requires defining domain-specific exception classes (e.g., `EventCapacityFullException`), but all tests can now deterministically assert against the `code` key.
+
+## Building the evaluator verification script
+
+**The constraint**
+Manually running Django checks, migrations, and parsing verbose test outputs is a poor evaluator experience.
+
+**What I considered**
+Creating a bash script (`verify.sh`), building a fake web dashboard, or writing a cross-platform Python script (`verify.py`).
+
+**What I chose**
+I built a cross-platform `verify.py` script that hooks directly into Django's test runner, parsing and streaming real-time individual test results.
+
+**The consequence**
+It requires maintaining an extra script in the repository root, but avoids over-engineered frontends while vastly improving evaluator UX across Linux, macOS, and Windows. The script outputs a precise checklist of all 52 passing tests natively on all platforms.
